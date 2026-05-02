@@ -1,6 +1,6 @@
 {
   "name": "joplin-plugin-joplinmemo",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "View ordinary Joplin notes as compact, colorful memo boards.",
   "license": "MIT",
   "keywords": [

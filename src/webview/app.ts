@@ -28,12 +28,15 @@ let editingMemoId = '';
 let editMemoColor = DEFAULT_MEMO_COLOR;
 let tooltipMemoId = '';
 let tooltipTimer: number | undefined;
-let selectTimer: number | undefined;
 let tooltipLeft = 0;
 let tooltipTop = 0;
+let tooltipBottom = 0;
+let tooltipMaxHeight = 320;
+let tooltipPlacement: 'above' | 'below' = 'below';
 let resourcePaths: Record<string, string> = {};
 
 const root = document.getElementById('app');
+const TOOLTIP_DELAY_MS = 120;
 
 function escapeHtml(value: string): string {
 	return value
@@ -67,6 +70,10 @@ function isCompactDocument(document: MemoDocument): boolean {
 function memoById(memoId: string): Memo | null {
 	if (!memoDocument) return null;
 	return memoDocument.memos.find(memo => memo.id === memoId) || null;
+}
+
+function isMobileView(): boolean {
+	return window.matchMedia('(pointer: coarse), (max-width: 780px)').matches;
 }
 
 function renderInlineMarkdown(value: string): string {
@@ -191,7 +198,6 @@ function renderMemoCard(memo: Memo): string {
 	const detail = excerpt(memo.body);
 	const isSelected = selectedMemoId === memo.id;
 	const isTitleOnly = !memo.body.trim();
-	const showTooltip = tooltipMemoId === memo.id;
 
 	return `
 		<div
@@ -204,12 +210,22 @@ function renderMemoCard(memo: Memo): string {
 				<span class="memo-title">${escapeHtml(memo.title)}</span>
 				${detail ? `<span class="memo-excerpt">${escapeHtml(detail)}</span>` : ''}
 			</button>
-			${showTooltip ? `
-				<div class="memo-tip" style="left: ${tooltipLeft}px; top: ${tooltipTop}px;">
-					<div class="memo-tip-title">${escapeHtml(memo.title)}</div>
-					${memo.body.trim() ? `<div class="rendered-markdown">${renderMarkdown(memo.body)}</div>` : ''}
-				</div>
-			` : ''}
+		</div>
+	`;
+}
+
+function renderMemoTooltip(): string {
+	if (!tooltipMemoId || tooltipMemoId === selectedMemoId || isMobileView()) return '';
+	const memo = memoById(tooltipMemoId);
+	if (!memo) return '';
+	const verticalStyle = tooltipPlacement === 'above'
+		? `top: auto; bottom: ${tooltipBottom}px;`
+		: `top: ${tooltipTop}px; bottom: auto;`;
+
+	return `
+		<div class="memo-tip" data-tooltip-memo-id="${escapeHtml(memo.id)}" style="left: ${tooltipLeft}px; ${verticalStyle} max-height: ${tooltipMaxHeight}px;">
+			<div class="memo-tip-title">${escapeHtml(memo.title)}</div>
+			${memo.body.trim() ? `<div class="rendered-markdown">${renderMarkdown(memo.body)}</div>` : ''}
 		</div>
 	`;
 }
@@ -260,6 +276,7 @@ function renderCompactDocument(): string {
 				</section>
 			</main>
 			${statusText ? `<div class="status">${escapeHtml(statusText)}</div>` : ''}
+			${renderMemoTooltip()}
 		</div>
 	`;
 }
@@ -283,17 +300,51 @@ function renderFullDocument(): string {
 					${memoDocument.memos.map(renderMemoCard).join('')}
 				</section>
 				<aside class="memo-detail">
-					${memo ? `
-						<div class="detail-toolbar">
-							<div class="detail-title">${escapeHtml(memo.title)}</div>
-						</div>
-						<div class="detail-body rendered-markdown">${memo.body.trim() ? renderMarkdown(memo.body) : '<p class="muted">No additional content.</p>'}</div>
-					` : ''}
+					${memo ? renderMemoDetail(memo) : ''}
 				</aside>
 			</main>
 			${statusText ? `<div class="status">${escapeHtml(statusText)}</div>` : ''}
+			${renderMemoTooltip()}
 		</div>
 	`;
+}
+
+function renderMemoDetail(memo: Memo): string {
+	return `
+		<div class="detail-toolbar">
+			<div class="detail-title">${escapeHtml(memo.title)}</div>
+		</div>
+		<div class="detail-body rendered-markdown">${memo.body.trim() ? renderMarkdown(memo.body) : '<p class="muted">No additional content.</p>'}</div>
+	`;
+}
+
+function clearTooltip(render = true): void {
+	window.clearTimeout(tooltipTimer);
+	if (!tooltipMemoId) return;
+	tooltipMemoId = '';
+	if (render) {
+		renderDocument();
+	} else {
+		root?.querySelector('.memo-tip')?.remove();
+	}
+}
+
+function updateSelectedMemoView(memoId: string): void {
+	const memo = memoById(memoId);
+	if (!memo) return;
+
+	selectedMemoId = memoId;
+	clearTooltip(false);
+
+	root?.querySelectorAll<HTMLElement>('.memo-card').forEach(card => {
+		card.classList.toggle('is-selected', card.dataset.memoId === memoId);
+	});
+
+	const detail = root?.querySelector<HTMLElement>('.memo-detail');
+	if (detail) {
+		detail.innerHTML = renderMemoDetail(memo);
+		detail.scrollTop = 0;
+	}
 }
 
 function renderDocument(): void {
@@ -365,12 +416,11 @@ async function handleClick(event: MouseEvent): Promise<void> {
 
 	if (target.dataset.action === 'select-memo' && target.dataset.memoId) {
 		const memoId = target.dataset.memoId;
-		if (selectedMemoId === memoId) return;
-		window.clearTimeout(selectTimer);
-		selectTimer = window.setTimeout(() => {
-			selectedMemoId = memoId;
-			renderDocument();
-		}, 320);
+		if (selectedMemoId === memoId) {
+			clearTooltip(false);
+			return;
+		}
+		updateSelectedMemoView(memoId);
 	}
 
 	if (target.dataset.action === 'show-add-memo' && memoDocument) {
@@ -382,12 +432,7 @@ async function handleClick(event: MouseEvent): Promise<void> {
 	}
 
 	if (target.dataset.action === 'cancel-memo-form') {
-		isAddingMemo = false;
-		editingMemoId = '';
-		addMemoColor = DEFAULT_MEMO_COLOR;
-		editMemoColor = DEFAULT_MEMO_COLOR;
-		statusText = '';
-		renderDocument();
+		cancelMemoForm();
 	}
 
 	if (target.dataset.action === 'set-add-color' && target.dataset.color) {
@@ -399,6 +444,18 @@ async function handleClick(event: MouseEvent): Promise<void> {
 		editMemoColor = target.dataset.color;
 		renderDocument();
 	}
+}
+
+function handlePointerDown(event: PointerEvent): void {
+	const target = (event.target as HTMLElement).closest<HTMLElement>('[data-action="select-memo"]');
+	if (!target?.dataset.memoId) return;
+
+	if (selectedMemoId === target.dataset.memoId) {
+		clearTooltip(false);
+		return;
+	}
+
+	updateSelectedMemoView(target.dataset.memoId);
 }
 
 async function handleSubmit(event: SubmitEvent): Promise<void> {
@@ -445,7 +502,6 @@ function handleDoubleClick(event: MouseEvent): void {
 	const memo = memoById(card.dataset.memoId);
 	if (!memo) return;
 
-	window.clearTimeout(selectTimer);
 	selectedMemoId = memo.id;
 	isAddingMemo = false;
 	editingMemoId = memo.id;
@@ -459,22 +515,40 @@ function setupMemoTooltip(): void {
 	if (!root) return;
 
 	root.addEventListener('mouseover', event => {
+		if (isMobileView()) return;
+		if ((event.target as HTMLElement).closest('.memo-tip')) return;
 		const card = (event.target as HTMLElement).closest<HTMLElement>('.memo-card');
 		if (!card?.dataset.memoId) return;
+		const relatedTarget = event.relatedTarget as HTMLElement | null;
+		if (relatedTarget && card.contains(relatedTarget)) return;
+		const memoId = card.dataset.memoId;
+		if (memoId === selectedMemoId) {
+			clearTooltip();
+			return;
+		}
+		const rect = card.getBoundingClientRect();
 		window.clearTimeout(tooltipTimer);
 		tooltipTimer = window.setTimeout(() => {
 			if (editingMemoId || isAddingMemo) return;
-			const rect = card.getBoundingClientRect();
+			if (selectedMemoId === memoId || isMobileView()) return;
 			const width = Math.min(360, Math.max(260, window.innerWidth - 32));
-			const height = 320;
+			const belowSpace = window.innerHeight - rect.bottom - 12;
+			const aboveSpace = rect.top - 12;
 			tooltipLeft = Math.max(12, Math.min(rect.left, window.innerWidth - width - 12));
-			tooltipTop = rect.bottom + 8;
-			if (tooltipTop + height > window.innerHeight - 12) {
-				tooltipTop = Math.max(12, rect.top - height - 8);
+			if (belowSpace >= 160 || belowSpace >= aboveSpace) {
+				tooltipPlacement = 'below';
+				tooltipTop = rect.bottom;
+				tooltipBottom = 0;
+				tooltipMaxHeight = Math.max(96, Math.min(320, belowSpace));
+			} else {
+				tooltipPlacement = 'above';
+				tooltipTop = 0;
+				tooltipBottom = window.innerHeight - rect.top;
+				tooltipMaxHeight = Math.max(96, Math.min(320, aboveSpace));
 			}
-			tooltipMemoId = card.dataset.memoId || '';
+			tooltipMemoId = memoId;
 			renderDocument();
-		}, 700);
+		}, TOOLTIP_DELAY_MS);
 	});
 
 	root.addEventListener('mouseout', event => {
@@ -482,12 +556,25 @@ function setupMemoTooltip(): void {
 		const relatedTarget = event.relatedTarget as HTMLElement | null;
 		const toCard = relatedTarget ? relatedTarget.closest<HTMLElement>('.memo-card') : null;
 		if (fromCard && fromCard === toCard) return;
-		window.clearTimeout(tooltipTimer);
-		if (tooltipMemoId) {
-			tooltipMemoId = '';
-			renderDocument();
-		}
+		clearTooltip();
 	});
+}
+
+function cancelMemoForm(): void {
+	if (!isAddingMemo && !editingMemoId) return;
+	isAddingMemo = false;
+	editingMemoId = '';
+	addMemoColor = DEFAULT_MEMO_COLOR;
+	editMemoColor = DEFAULT_MEMO_COLOR;
+	statusText = '';
+	renderDocument();
+}
+
+function handleKeyDown(event: KeyboardEvent): void {
+	if (event.key !== 'Escape') return;
+	if (!isAddingMemo && !editingMemoId) return;
+	event.preventDefault();
+	cancelMemoForm();
 }
 
 function moveMemo(targetMemoId: string, insertAfter: boolean): void {
@@ -559,9 +646,11 @@ async function start(): Promise<void> {
 	if (!root) return;
 
 	webviewApi.onMessage(applyPluginMessage);
+	root.addEventListener('pointerdown', handlePointerDown, true);
 	root.addEventListener('click', handleClick);
 	root.addEventListener('submit', handleSubmit);
 	root.addEventListener('dblclick', handleDoubleClick);
+	root.addEventListener('keydown', handleKeyDown);
 	setupDragAndDrop();
 	setupMemoTooltip();
 

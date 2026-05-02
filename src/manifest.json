@@ -2,7 +2,7 @@
 	"manifest_version": 1,
 	"id": "com.github.txnam.joplinmemo",
 	"app_min_version": "3.5",
-	"version": "0.1.0",
+	"version": "0.2.0",
 	"name": "JoplinMemo",
 	"description": "View ordinary Joplin notes as compact, colorful memo boards.",
 	"author": "https://github.com/txnam/JoplinMemo",

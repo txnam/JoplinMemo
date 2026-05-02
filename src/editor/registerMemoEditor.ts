@@ -8,6 +8,7 @@ type EditorState = {
 	noteId: string;
 	body: string;
 	title: string;
+	markupLanguage: number;
 	document: MemoDocument;
 	resourcePaths: Record<string, string>;
 };
@@ -15,6 +16,7 @@ type EditorState = {
 type ViewContext = {
 	state: EditorState | null;
 	ready: boolean;
+	emptyMessage: string;
 };
 
 type WebviewMessage =
@@ -25,7 +27,15 @@ type WebviewMessage =
 
 const EDITOR_VIEW_ID = 'joplinmemo-viewer';
 const OPEN_COMMAND = 'joplinmemoOpenViewer';
+const MARKUP_LANGUAGE_HTML = 2;
 const viewContexts = new Map<ViewHandle, ViewContext>();
+
+type NoteData = {
+	id: string;
+	title: string;
+	body: string;
+	markupLanguage: number;
+};
 
 function editorHtml(): string {
 	return '<!doctype html>\n' +
@@ -48,6 +58,7 @@ function contextFor(handle: ViewHandle): ViewContext {
 		context = {
 			state: null,
 			ready: false,
+			emptyMessage: '',
 		};
 		viewContexts.set(handle, context);
 	}
@@ -55,13 +66,24 @@ function contextFor(handle: ViewHandle): ViewContext {
 	return context;
 }
 
-async function loadNote(noteId: string): Promise<{ id: string; title: string; body: string }> {
-	const note = await joplin.data.get(['notes', noteId], { fields: ['id', 'title', 'body'] });
+async function loadNote(noteId: string): Promise<NoteData> {
+	const note = await joplin.data.get(['notes', noteId], { fields: ['id', 'title', 'body', 'markup_language'] });
 	return {
 		id: String(note.id || noteId),
 		title: typeof note.title === 'string' ? note.title : '',
 		body: typeof note.body === 'string' ? note.body : '',
+		markupLanguage: Number(note.markup_language || 1),
 	};
+}
+
+function isKanbanNote(body: string): boolean {
+	return /(^|\n)```kanban(?:\s|\n)/i.test(body) || /(^|\n)```kanban-settings(?:\s|\n)/i.test(body);
+}
+
+function unsupportedNoteMessage(note: NoteData): string {
+	if (note.markupLanguage === MARKUP_LANGUAGE_HTML) return 'HTML notes are not shown as memos.';
+	if (isKanbanNote(note.body)) return 'Kanban notes are not shown as memos.';
+	return '';
 }
 
 function resourceIdsInDocument(document: MemoDocument): string[] {
@@ -100,18 +122,20 @@ async function resolveResourcePaths(document: MemoDocument): Promise<Record<stri
 	return resourcePaths;
 }
 
-async function createEditorState(noteId: string, title: string, body: string): Promise<EditorState> {
-	const document = parseMemoDocument(noteId, title, body);
+async function createEditorState(note: NoteData, body: string = note.body): Promise<EditorState> {
+	const document = parseMemoDocument(note.id, note.title, body);
 	return {
-		noteId,
-		title,
+		noteId: note.id,
+		title: note.title,
 		body,
+		markupLanguage: note.markupLanguage,
 		document,
 		resourcePaths: await resolveResourcePaths(document),
 	};
 }
 
 function postDocument(handle: ViewHandle, state: EditorState): void {
+	contextFor(handle).emptyMessage = '';
 	joplin.views.editors.postMessage(handle, {
 		type: 'document',
 		document: state.document,
@@ -120,6 +144,7 @@ function postDocument(handle: ViewHandle, state: EditorState): void {
 }
 
 function postEmpty(handle: ViewHandle, message: string): void {
+	contextFor(handle).emptyMessage = message;
 	joplin.views.editors.postMessage(handle, {
 		type: 'empty',
 		message,
@@ -127,6 +152,7 @@ function postEmpty(handle: ViewHandle, message: string): void {
 }
 
 function postError(handle: ViewHandle, message: string): void {
+	contextFor(handle).emptyMessage = '';
 	joplin.views.editors.postMessage(handle, {
 		type: 'error',
 		message,
@@ -161,7 +187,12 @@ async function saveDocument(handle: ViewHandle, context: ViewContext, document: 
 		body,
 	});
 
-	context.state = await createEditorState(context.state.noteId, context.state.title, body);
+	context.state = await createEditorState({
+		id: context.state.noteId,
+		title: context.state.title,
+		body,
+		markupLanguage: context.state.markupLanguage,
+	}, body);
 }
 
 async function updateView(handle: ViewHandle, noteId: string, body: string): Promise<void> {
@@ -169,11 +200,21 @@ async function updateView(handle: ViewHandle, noteId: string, body: string): Pro
 
 	try {
 		const note = await loadNote(noteId);
+		const unsupportedMessage = unsupportedNoteMessage({
+			...note,
+			body,
+		});
+		if (unsupportedMessage) {
+			context.state = null;
+			if (context.ready) postEmpty(handle, unsupportedMessage);
+			return;
+		}
+
 		if (context.state?.noteId === noteId && context.state.body === body && context.state.title === note.title) {
 			return;
 		}
 
-		const state = await createEditorState(noteId, note.title, body);
+		const state = await createEditorState(note, body);
 		context.state = state;
 		if (context.ready) postDocument(handle, state);
 	} catch (error) {
@@ -192,9 +233,18 @@ async function handleWebviewMessage(handle: ViewHandle, message: WebviewMessage)
 	if (message.type === 'ready') {
 		context.ready = true;
 
+		if (!context.state) {
+			const note = await joplin.workspace.selectedNote();
+			if (note?.id) {
+				const noteId = String(note.id);
+				const body = typeof note.body === 'string' ? note.body : (await loadNote(noteId)).body;
+				await updateView(handle, noteId, body);
+			}
+		}
+
 		return context.state
 			? { ok: true, type: 'document', document: context.state.document, resourcePaths: context.state.resourcePaths }
-			: { ok: true };
+			: { ok: true, type: 'empty', message: context.emptyMessage || 'Open a note to view memos.' };
 	}
 
 	if (!context.state || message.noteId !== context.state.noteId) return { ok: false };
@@ -253,7 +303,9 @@ async function setupMemoEditor(handle: ViewHandle): Promise<void> {
 
 	await editors.onUpdate(handle, async event => {
 		if (!event.noteId) {
-			contextFor(handle).state = null;
+			const context = contextFor(handle);
+			context.state = null;
+			context.emptyMessage = 'No note is selected.';
 			postEmpty(handle, 'No note is selected.');
 			return;
 		}
@@ -276,7 +328,16 @@ export async function registerMemoEditor(): Promise<string> {
 	});
 
 	await joplin.views.editors.register(EDITOR_VIEW_ID, {
-		onActivationCheck: async event => !!event.noteId,
+		onActivationCheck: async event => {
+			if (!event.noteId) return false;
+			try {
+				const note = await loadNote(event.noteId);
+				return !unsupportedNoteMessage(note);
+			} catch (error) {
+				console.warn('Could not check whether JoplinMemo should activate:', error);
+				return false;
+			}
+		},
 		onSetup: setupMemoEditor,
 	});
 

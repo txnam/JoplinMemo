@@ -175,7 +175,6 @@ button {
 	position: fixed;
 	z-index: 20;
 	width: min(360px, calc(100vw - 32px));
-	max-height: 320px;
 	overflow: auto;
 	padding: 10px;
 	border: 1px solid #c8d0dc;
@@ -183,6 +182,7 @@ button {
 	background: #ffffff;
 	color: #17202a;
 	cursor: default;
+	pointer-events: none;
 	box-shadow: 0 8px 24px rgba(15, 23, 42, 0.18);
 }
 
@@ -400,6 +400,10 @@ button {
 	.memo-detail {
 		border-top: 1px solid #d7dde7;
 		border-left: 0;
+	}
+
+	.memo-tip {
+		display: none;
 	}
 }
 
