@@ -64,6 +64,14 @@ function parse(markdown) {
 }
 
 {
+	const document = parse('- First\n  Intro\n  * * *\n  Internal detail\n- Second\n  Body B');
+	assert.strictEqual(document.rule.type, 'unordered-list');
+	assert.strictEqual(document.memos.length, 2);
+	assert.strictEqual(document.memos[0].body, 'Intro\n* * *\nInternal detail');
+	assert.strictEqual(serializeMemoDocument(document), '- First\n  Intro\n  * * *\n  Internal detail\n- Second\n  Body B');
+}
+
+{
 	const document = parse('2/ First\nBody A\n\n1/ Second\nBody B');
 	assert.strictEqual(document.rule.type, 'reverse-number-slash');
 	assert.strictEqual(document.memos.length, 2);

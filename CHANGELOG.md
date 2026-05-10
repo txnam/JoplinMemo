@@ -4,6 +4,8 @@
 
 - Add memo split support for notes with an abstract before heading sections.
 - Add memo split support for Markdown horizontal-rule separators such as `* * *`, `***`, and `---`.
+- Prefer heading, list, and reverse-number memo rules when the note starts with those structures, so nested horizontal rules stay inside memo content.
+- Refresh the selected note whenever the memo editor becomes ready, fixing stale memo content after switching notes on mobile.
 - Clarify compact and full display behavior so compact notes render as grid-only, including on mobile.
 - Keep compact mobile layouts from reserving an unused detail area.
 - Clear hover tips during wheel scrolling so memo lists remain scrollable.

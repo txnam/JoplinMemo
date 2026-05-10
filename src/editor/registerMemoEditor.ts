@@ -249,13 +249,14 @@ async function handleWebviewMessage(handle: ViewHandle, message: WebviewMessage)
 	if (message.type === 'ready') {
 		context.ready = true;
 
-		if (!context.state) {
-			const note = await joplin.workspace.selectedNote();
-			if (note?.id) {
-				const noteId = String(note.id);
-				const body = typeof note.body === 'string' ? note.body : (await loadNote(noteId)).body;
-				await updateView(handle, noteId, body);
-			}
+		const note = await joplin.workspace.selectedNote();
+		if (note?.id) {
+			const noteId = String(note.id);
+			const body = typeof note.body === 'string' ? note.body : (await loadNote(noteId)).body;
+			await updateView(handle, noteId, body);
+		} else {
+			context.state = null;
+			context.emptyMessage = 'No note is selected.';
 		}
 
 		return context.state

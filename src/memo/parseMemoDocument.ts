@@ -10,6 +10,8 @@ type StructuralMarker = {
 	title: string;
 };
 
+type FirstMemoSignal = 'structural' | 'reverse-number-slash' | 'separator' | 'prose' | 'empty';
+
 const NAMED_COLORS: Record<string, string> = {
 	amber: '#f59e0b',
 	blue: '#3abef9',
@@ -63,6 +65,7 @@ function isFenceLine(line: string): boolean {
 }
 
 function horizontalRuleMarker(line: string): string | null {
+	if (line !== line.trim()) return null;
 	const trimmed = line.trim();
 	if (/^(?:\*\s*){3,}$/.test(trimmed)) return trimmed;
 	if (/^(?:-\s*){3,}$/.test(trimmed)) return trimmed;
@@ -201,6 +204,25 @@ function unindentListBody(line: string, rule: MemoSplitRule): string {
 	if (rule.type === 'heading' || rule.type === 'abstract-heading' || rule.type === 'separator-section' || rule.type === 'block') return line;
 	const pattern = new RegExp(`^ {0,${rule.bodyIndent}}`);
 	return line.replace(pattern, '');
+}
+
+function firstMemoSignal(lines: string[]): FirstMemoSignal {
+	let inFence = false;
+
+	for (const line of lines) {
+		if (isFenceLine(line)) {
+			inFence = !inFence;
+			continue;
+		}
+
+		if (inFence || line.trim() === '') continue;
+		if (structuralMarker(line)) return 'structural';
+		if (reverseNumberSlashMarker(line)) return 'reverse-number-slash';
+		if (horizontalRuleMarker(line)) return 'separator';
+		return 'prose';
+	}
+
+	return 'empty';
 }
 
 function parseSeparatorSections(lines: string[]): { rule: MemoSplitRule; memos: Memo[] } | null {
@@ -422,10 +444,11 @@ function fallbackMemo(markdown: string): Memo {
 
 export function parseMemoDocument(noteId: string, noteTitle: string, markdown: string): MemoDocument {
 	const lines = splitLines(markdown);
-	const separatorMemos = parseSeparatorSections(lines);
-	const abstractHeadingMemos = separatorMemos ? null : parseAbstractHeadingMemos(lines);
-	const structuralMemos = separatorMemos || abstractHeadingMemos ? null : parseStructuralMemos(lines);
-	const reverseNumberMemos = separatorMemos || abstractHeadingMemos || structuralMemos ? null : parseReverseNumberSlashMemos(lines);
+	const signal = firstMemoSignal(lines);
+	const structuralMemos = signal === 'structural' ? parseStructuralMemos(lines) : null;
+	const reverseNumberMemos = signal === 'reverse-number-slash' ? parseReverseNumberSlashMemos(lines) : null;
+	const separatorMemos = !structuralMemos && !reverseNumberMemos && (signal === 'separator' || signal === 'prose') ? parseSeparatorSections(lines) : null;
+	const abstractHeadingMemos = !separatorMemos && signal === 'prose' ? parseAbstractHeadingMemos(lines) : null;
 	const memos = separatorMemos?.memos || abstractHeadingMemos?.memos || structuralMemos?.memos || reverseNumberMemos?.memos || parseBlockMemos(lines);
 
 	return {

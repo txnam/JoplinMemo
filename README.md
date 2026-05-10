@@ -19,15 +19,17 @@ JoplinMemo separates parsing from display:
 - Split mode decides how Markdown is converted to memos.
 - Display mode decides whether the memo board shows only compact cards or cards plus a detail pane.
 
-Split modes are detected in this order:
+Split modes are detected from the first meaningful note content:
 
-1. Separator sections with Markdown horizontal rules.
-2. Abstract plus headings.
-3. Headings of the same level.
-4. Unordered or ordered list items of the same indentation.
-5. Reverse numbered items such as `3/ Title`.
-6. Blank-line blocks.
-7. Whole-note fallback.
+1. If the note starts with a heading, headings of the same level become memos.
+2. If the note starts with an unordered or ordered list item, list items of the same indentation become memos.
+3. If the note starts with reverse numbered items such as `3/ Title`, those items become memos.
+4. If the note starts with prose or a top-level horizontal rule, top-level horizontal rules can become section separators.
+5. If prose is followed by heading sections, the prose becomes an abstract memo and the headings become section memos.
+6. Otherwise, blank-line blocks become memos.
+7. If no split is possible, the whole note becomes one memo.
+
+Indented horizontal rules are treated as memo content. This keeps separators inside list items or nested sections from becoming the main note split rule.
 
 Display modes:
 
