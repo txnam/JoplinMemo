@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.3.1
+
+- Fix stale memo content when switching notes on mobile after returning from Markdown view.
+- Refine split priority so heading, list, and reverse-number notes are not overridden by nested horizontal rules.
+
 ## 0.3.0
 
 - Add memo split support for notes with an abstract before heading sections.
