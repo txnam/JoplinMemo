@@ -5,10 +5,13 @@ export type Memo = {
 	title: string;
 	body: string;
 	color: string;
-	source: 'heading' | 'list' | 'reverse-number-list' | 'block' | 'whole-note';
+	source: 'abstract' | 'heading' | 'separator-section' | 'list' | 'reverse-number-list' | 'block' | 'whole-note';
+	headingLevel?: number;
 };
 
 export type MemoSplitRule =
+	| { type: 'abstract-heading'; level: number }
+	| { type: 'separator-section'; marker: string; headingLevel?: number }
 	| { type: 'heading'; level: number }
 	| { type: 'unordered-list'; indent: number; bodyIndent: number }
 	| { type: 'ordered-list'; indent: number; bodyIndent: number }

@@ -62,6 +62,14 @@ function isFenceLine(line: string): boolean {
 	return /^(```|~~~)/.test(line.trim());
 }
 
+function horizontalRuleMarker(line: string): string | null {
+	const trimmed = line.trim();
+	if (/^(?:\*\s*){3,}$/.test(trimmed)) return trimmed;
+	if (/^(?:-\s*){3,}$/.test(trimmed)) return trimmed;
+	if (/^(?:_\s*){3,}$/.test(trimmed)) return trimmed;
+	return null;
+}
+
 function normalizeColor(value: string | undefined): string {
 	if (!value) return DEFAULT_MEMO_COLOR;
 	const normalized = value.trim().toLowerCase();
@@ -109,6 +117,14 @@ function createMemo(rawTitle: string, bodyLines: string[], source: Memo['source'
 	};
 }
 
+function createMemoFromBlock(blockLines: string[], source: Memo['source'], index: number): Memo | null {
+	const trimmedBlock = trimBlankLines(blockLines);
+	if (!trimmedBlock) return null;
+
+	const [firstLine, ...bodyLines] = trimmedBlock.split('\n');
+	return createMemo(firstLine, bodyLines, source, index);
+}
+
 function structuralMarker(line: string): StructuralMarker | null {
 	const headingMatch = /^(#{1,6})\s+(.+?)\s*$/.exec(line);
 	if (headingMatch) {
@@ -150,7 +166,16 @@ function structuralMarker(line: string): StructuralMarker | null {
 function sameRule(left: MemoSplitRule, right: MemoSplitRule): boolean {
 	if (left.type !== right.type) return false;
 	if (left.type === 'heading' && right.type === 'heading') return left.level === right.level;
-	if (left.type !== 'heading' && left.type !== 'block' && right.type !== 'heading' && right.type !== 'block') {
+	if (
+		left.type !== 'heading' &&
+		left.type !== 'abstract-heading' &&
+		left.type !== 'separator-section' &&
+		left.type !== 'block' &&
+		right.type !== 'heading' &&
+		right.type !== 'abstract-heading' &&
+		right.type !== 'separator-section' &&
+		right.type !== 'block'
+	) {
 		return left.indent === right.indent;
 	}
 	return false;
@@ -173,9 +198,94 @@ function findFirstSplitRule(lines: string[]): MemoSplitRule | null {
 }
 
 function unindentListBody(line: string, rule: MemoSplitRule): string {
-	if (rule.type === 'heading' || rule.type === 'block') return line;
+	if (rule.type === 'heading' || rule.type === 'abstract-heading' || rule.type === 'separator-section' || rule.type === 'block') return line;
 	const pattern = new RegExp(`^ {0,${rule.bodyIndent}}`);
 	return line.replace(pattern, '');
+}
+
+function parseSeparatorSections(lines: string[]): { rule: MemoSplitRule; memos: Memo[] } | null {
+	let inFence = false;
+	let marker = '';
+	let headingLevel = 0;
+	const sections: string[][] = [];
+	let current: string[] = [];
+
+	const finish = () => {
+		if (trimBlankLines(current)) sections.push(current);
+		current = [];
+	};
+
+	for (const line of lines) {
+		if (isFenceLine(line)) {
+			current.push(line);
+			inFence = !inFence;
+			continue;
+		}
+
+		const horizontalRule = !inFence ? horizontalRuleMarker(line) : null;
+		if (horizontalRule) {
+			marker = marker || horizontalRule;
+			finish();
+			continue;
+		}
+
+		current.push(line);
+	}
+
+	finish();
+	if (!marker || sections.length < 2) return null;
+
+	const memos = sections
+		.map((section, index) => {
+			const firstLine = trimBlankLines(section).split('\n')[0] || '';
+			const structural = structuralMarker(firstLine);
+			if (structural?.rule.type === 'heading') {
+				headingLevel = headingLevel || structural.rule.level;
+				const memo = createMemoFromBlock(section, 'heading', index);
+				return memo ? { ...memo, headingLevel: structural.rule.level } : null;
+			}
+
+			return createMemoFromBlock(section, 'separator-section', index);
+		})
+		.filter((memo): memo is Memo => !!memo);
+	return memos.length >= 2 ? { rule: { type: 'separator-section', marker, ...(headingLevel ? { headingLevel } : {}) }, memos } : null;
+}
+
+function parseAbstractHeadingMemos(lines: string[]): { rule: MemoSplitRule; memos: Memo[] } | null {
+	let inFence = false;
+	let firstHeadingIndex = -1;
+	let firstHeadingRule: MemoSplitRule | null = null;
+
+	for (let index = 0; index < lines.length; index += 1) {
+		const line = lines[index];
+		if (isFenceLine(line)) {
+			inFence = !inFence;
+			continue;
+		}
+
+		const marker = !inFence ? structuralMarker(line) : null;
+		if (marker?.rule.type === 'heading') {
+			firstHeadingIndex = index;
+			firstHeadingRule = marker.rule;
+			break;
+		}
+	}
+
+	if (firstHeadingIndex <= 0 || !firstHeadingRule || firstHeadingRule.type !== 'heading') return null;
+
+	const abstractMemo = createMemoFromBlock(lines.slice(0, firstHeadingIndex), 'abstract', 0);
+	if (!abstractMemo) return null;
+
+	const headingMemos = parseStructuralMemos(lines.slice(firstHeadingIndex));
+	if (!headingMemos || headingMemos.rule.type !== 'heading' || headingMemos.rule.level !== firstHeadingRule.level) return null;
+
+	return {
+		rule: { type: 'abstract-heading', level: firstHeadingRule.level },
+		memos: [abstractMemo, ...headingMemos.memos.map((memo, index) => ({
+			...memo,
+			id: memoId('heading', index),
+		}))],
+	};
 }
 
 function reverseNumberSlashMarker(line: string): { title: string; indent: number; bodyIndent: number } | null {
@@ -312,14 +422,16 @@ function fallbackMemo(markdown: string): Memo {
 
 export function parseMemoDocument(noteId: string, noteTitle: string, markdown: string): MemoDocument {
 	const lines = splitLines(markdown);
-	const structuralMemos = parseStructuralMemos(lines);
-	const reverseNumberMemos = structuralMemos ? null : parseReverseNumberSlashMemos(lines);
-	const memos = structuralMemos?.memos || reverseNumberMemos?.memos || parseBlockMemos(lines);
+	const separatorMemos = parseSeparatorSections(lines);
+	const abstractHeadingMemos = separatorMemos ? null : parseAbstractHeadingMemos(lines);
+	const structuralMemos = separatorMemos || abstractHeadingMemos ? null : parseStructuralMemos(lines);
+	const reverseNumberMemos = separatorMemos || abstractHeadingMemos || structuralMemos ? null : parseReverseNumberSlashMemos(lines);
+	const memos = separatorMemos?.memos || abstractHeadingMemos?.memos || structuralMemos?.memos || reverseNumberMemos?.memos || parseBlockMemos(lines);
 
 	return {
 		noteId,
 		title: noteTitle || 'Untitled note',
-		rule: structuralMemos?.rule || reverseNumberMemos?.rule || { type: 'block' },
+		rule: separatorMemos?.rule || abstractHeadingMemos?.rule || structuralMemos?.rule || reverseNumberMemos?.rule || { type: 'block' },
 		memos: memos.length ? memos : [fallbackMemo(markdown)],
 	};
 }

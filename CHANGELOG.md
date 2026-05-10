@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.3.0
+
+- Add memo split support for notes with an abstract before heading sections.
+- Add memo split support for Markdown horizontal-rule separators such as `* * *`, `***`, and `---`.
+- Clarify compact and full display behavior so compact notes render as grid-only, including on mobile.
+- Keep compact mobile layouts from reserving an unused detail area.
+- Clear hover tips during wheel scrolling so memo lists remain scrollable.
+- Add parser and serializer coverage for the supported memo rules.
+
 ## 0.2.0
 
 - Skip HTML notes and Kanban board notes instead of rendering them as memo boards.

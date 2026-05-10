@@ -178,6 +178,22 @@ function newMemo(source: Memo['source'], title: string, body: string, color: str
 	};
 }
 
+function memoSourceForRule(rule: MemoDocument['rule']): Memo['source'] {
+	if (rule.type === 'block') return 'block';
+	if (rule.type === 'heading' || rule.type === 'abstract-heading') return 'heading';
+	if (rule.type === 'separator-section') return 'separator-section';
+	if (rule.type === 'reverse-number-slash') return 'reverse-number-list';
+	return 'list';
+}
+
+function insertMemo(document: MemoDocument, memo: Memo): Memo[] {
+	if (document.rule.type === 'abstract-heading') {
+		return [document.memos[0], memo, ...document.memos.slice(1)].filter((item): item is Memo => !!item);
+	}
+
+	return [memo, ...document.memos];
+}
+
 async function saveDocument(handle: ViewHandle, context: ViewContext, document: MemoDocument): Promise<void> {
 	if (!context.state) return;
 
@@ -262,16 +278,10 @@ async function handleWebviewMessage(handle: ViewHandle, message: WebviewMessage)
 	}
 
 	if (message.type === 'addMemo') {
-		const source = context.state.document.rule.type === 'block'
-			? 'block'
-			: context.state.document.rule.type === 'heading'
-				? 'heading'
-				: context.state.document.rule.type === 'reverse-number-slash'
-					? 'reverse-number-list'
-					: 'list';
+		const source = memoSourceForRule(context.state.document.rule);
 		await saveDocument(handle, context, {
 			...context.state.document,
-			memos: [newMemo(source, message.title, message.body, message.color), ...context.state.document.memos],
+			memos: insertMemo(context.state.document, newMemo(source, message.title, message.body, message.color)),
 		});
 		return { ok: true, type: 'document', document: context.state.document };
 	}

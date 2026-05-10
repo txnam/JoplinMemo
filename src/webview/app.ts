@@ -260,7 +260,7 @@ function renderMemoForm(isCompact: boolean, memo: Memo | null): string {
 function renderCompactDocument(): string {
 	if (!memoDocument) return '';
 	return `
-		<div class="memo-layout is-compact">
+		<div class="memo-layout is-compact" data-display-mode="compact">
 			<header class="memo-header">
 				<div class="note-title">${escapeHtml(memoDocument.title)}</div>
 				<div class="memo-actions">
@@ -285,7 +285,7 @@ function renderFullDocument(): string {
 	if (!memoDocument) return '';
 	const memo = selectedMemo();
 	return `
-		<div class="memo-layout">
+		<div class="memo-layout is-full" data-display-mode="full">
 			<header class="memo-header">
 				<div class="note-title">${escapeHtml(memoDocument.title)}</div>
 				<div class="memo-actions">
@@ -513,6 +513,8 @@ function handleDoubleClick(event: MouseEvent): void {
 
 function setupMemoTooltip(): void {
 	if (!root) return;
+
+	root.addEventListener('wheel', () => clearTooltip(false), { passive: true });
 
 	root.addEventListener('mouseover', event => {
 		if (isMobileView()) return;

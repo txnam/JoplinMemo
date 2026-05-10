@@ -14,15 +14,35 @@ function indentBody(body: string, width: number): string {
 	return body.split('\n').map(line => line ? `${prefix}${line}` : '').join('\n');
 }
 
+function plainMemoBlock(memo: Memo): string {
+	const title = `${cleanTitle(memo.title)}${colorMarker(memo)}`;
+	return memo.body.trim() ? `${title}\n${memo.body.trim()}` : title;
+}
+
+function headingMemoBlock(memo: Memo, level: number): string {
+	const prefix = '#'.repeat(level);
+	const title = `${prefix} ${cleanTitle(memo.title)}${colorMarker(memo)}`;
+	return memo.body.trim() ? `${title}\n${memo.body.trim()}` : title;
+}
+
 export function serializeMemoDocument(document: MemoDocument): string {
 	const rule = document.rule;
 
+	if (rule.type === 'abstract-heading') {
+		return document.memos.map((memo, index) => index === 0
+			? plainMemoBlock(memo)
+			: headingMemoBlock(memo, rule.level)).join('\n\n');
+	}
+
+	if (rule.type === 'separator-section') {
+		const marker = rule.marker || '* * *';
+		return document.memos.map(memo => memo.source === 'heading' && (memo.headingLevel || rule.headingLevel)
+			? headingMemoBlock(memo, memo.headingLevel || rule.headingLevel || 1)
+			: plainMemoBlock(memo)).join(`\n\n${marker}\n\n`);
+	}
+
 	if (rule.type === 'heading') {
-		const prefix = '#'.repeat(rule.level);
-		return document.memos.map(memo => {
-			const title = `${prefix} ${cleanTitle(memo.title)}${colorMarker(memo)}`;
-			return memo.body.trim() ? `${title}\n${memo.body.trim()}` : title;
-		}).join('\n\n');
+		return document.memos.map(memo => headingMemoBlock(memo, rule.level)).join('\n\n');
 	}
 
 	if (rule.type === 'unordered-list') {
@@ -54,8 +74,5 @@ export function serializeMemoDocument(document: MemoDocument): string {
 		}).join('\n\n');
 	}
 
-	return document.memos.map(memo => {
-		const title = `${cleanTitle(memo.title)}${colorMarker(memo)}`;
-		return memo.body.trim() ? `${title}\n${memo.body.trim()}` : title;
-	}).join('\n\n');
+	return document.memos.map(plainMemoBlock).join('\n\n');
 }
