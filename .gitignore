@@ -4,3 +4,5 @@ publish/
 *.tgz
 *.log
 
+output/
+.playwright-cli/

@@ -163,12 +163,15 @@ function createPluginInfo(manifestPath, destPath, jplFilePath) {
 
 function onBuildCompleted() {
 	try {
+		for (const icon of Object.values(manifest.icons || {})) {
+			if (!fs.pathExistsSync(path.resolve(distDir, icon))) throw new Error(`Missing packaged icon: ${icon}`);
+		}
 		fs.removeSync(path.resolve(publishDir, 'index.js'));
 		createPluginArchive(distDir, pluginArchiveFilePath);
 		createPluginInfo(manifestPath, pluginInfoFilePath, pluginArchiveFilePath);
 		validatePackageJson();
 	} catch (error) {
-		console.error(chalk.red(error.message));
+		throw error;
 	}
 }
 
@@ -205,6 +208,7 @@ const pluginConfig = { ...baseConfig, entry: './src/index.ts',
 	plugins: [
 		new CopyPlugin({
 			patterns: [
+				{ from: 'assets', to: 'assets' },
 				{
 					from: '**/*',
 					context: path.resolve(__dirname, 'src'),
@@ -274,7 +278,10 @@ const createArchiveConfig = {
 	},
 	plugins: [{
 		apply(compiler) {
-			compiler.hooks.done.tap('archiveOnBuildListener', onBuildCompleted);
+			compiler.hooks.done.tap('archiveOnBuildListener', stats => {
+				if (stats.hasErrors()) throw new Error('Compilation failed; archive was not created.');
+				onBuildCompleted();
+			});
 		},
 	}],
 };

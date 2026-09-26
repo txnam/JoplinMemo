@@ -1,48 +1,79 @@
 # JoplinMemo
 
-JoplinMemo is a Joplin plugin that adds a compact memo-board view for ordinary notes.
+JoplinMemo 0.4.2 turns ordinary Markdown notes into colourful memo boards, readable cards and image slideshows. It requires **Joplin 3.5.1 or later** on desktop and mobile. Android is the mobile acceptance target; iOS has not been verified for this release.
 
-It does not introduce a new Markdown format. Instead, it reads the current note and splits it into loose memo-like parts:
+**Turn an image note into a slideshow:** paste your images into a note, open **Slide**, then press **Play**. Each image becomes a slide, with optional formatted captions, adjustable timing and zoom. Your note stays ordinary Markdown.
 
-- Horizontal rules such as `* * *`, `***`, `---`, `- - -`, `___`, or `_ _ _` become explicit section separators. The detected separator style is kept when the note is saved.
-- Notes with an abstract before the first heading are split into one abstract memo followed by heading memos. For example, an introduction followed by `## H2` sections becomes an abstract memo plus one memo per `## H2`.
-- If the first structured part is a heading, the same heading level becomes the memo separator. For example, notes beginning with `## H2` are split by each `## H2`, while nested `### H3` content stays inside that memo.
-- If the first structured part is a bullet or numbered list item, items of the same list style and indentation become separate memos.
-- Mixed prose is split by blank lines, with the first line used as the memo title.
+## Image slideshow
 
-Add a color marker such as `[[#facc15]]` or `[[blue]]` at the end of a memo title to color that memo.
+1. Create a note with images on their own lines. You may add a heading before the first image and caption text after each image.
+2. Open the note in JoplinMemo and select **Slide**. The first image opens without starting playback.
+3. Press **Play** for an automatic slideshow, or browse with the previous/next buttons, arrow keys, or a horizontal swipe while the image is fitted.
 
-## Memo rules
+- **Playback:** choose 3, 5 or 10 seconds per image; 5 seconds is the default. Use Pause at any time and enable Loop when you want to repeat the album.
+- **Captions:** show or hide formatted text below each image. Text belongs to the preceding image until the next image; alt text is used when no caption is supplied.
+- **Image controls:** fit the image to the viewing area, view original size within the zoom limit, or zoom up to eight times the fitted size. Use the mouse wheel or pinch gesture to zoom and drag to pan.
+- **Viewing area:** slides fill the plugin area; Fullscreen is available when the host supports it. Click the image or the surrounding stage to return to the memo board, or use Close or Escape.
+- **Automatic pause:** zooming, closing the viewer, changing notes, hiding the app or encountering an image error pauses playback. Only the next image is preloaded.
 
-JoplinMemo separates parsing from display:
+The **Slide** button appears automatically for image albums. Images inside code, inline images mixed into sentences, and notes with prose before the first image do not qualify. A single opening heading is allowed, and Markdown reference images are supported. Viewing slides never changes or saves the note.
 
-- Split mode decides how Markdown is converted to memos.
-- Display mode decides whether the memo board shows only compact cards or cards plus a detail pane.
+## Install
 
-Split modes are detected from the first meaningful note content:
+Download `com.github.txnam.joplinmemo.jpl` from [GitHub Releases](https://github.com/txnam/JoplinMemo/releases) and install it using Joplin's **Install from file** plugin option. Version 0.4.2 requires Joplin 3.5.1 or later.
 
-1. If the note starts with a heading, headings of the same level become memos.
-2. If the note starts with an unordered or ordered list item, list items of the same indentation become memos.
-3. If the note starts with reverse numbered items such as `3/ Title`, those items become memos.
-4. If the note starts with prose or a top-level horizontal rule, top-level horizontal rules can become section separators.
-5. If prose is followed by heading sections, the prose becomes an abstract memo and the headings become section memos.
-6. Otherwise, blank-line blocks become memos.
-7. If no split is possible, the whole note becomes one memo.
+## Reading and editing
 
-Indented horizontal rules are treated as memo content. This keeps separators inside list items or nested sections from becoming the main note split rule.
+- Notes containing title-only memos use the compact grid. Click or tap a card to read its complete formatted content, including long titles on phones. Compact tooltips also show the selected memo. Use **Edit** beside **+ Memo** to edit the selected or keyboard-focused card, or **Edit** beside **Close** in the reading pane.
+- Notes with bodies show a grid and detail pane. Double-click a card or its detail content to edit; F2 edits the selected memo. Cards and detail panes have no Edit/Read toolbars. The compact reader also supports double-click to edit.
+- Header text, tooltips, detail and reading panes use Joplin's Markdown renderer. Supported acceptance cases include emphasis, headings, links, nested lists, numbered lists, tables, checkboxes, code and images. Maths, Mermaid, third-party renderers and custom Joplin CSS are outside this release's acceptance scope.
+- Drag and drop cards to reorder them. An abstract remains pinned before heading sections; no up/down buttons occupy card space.
+- Form drafts survive colour changes, selection and failed saves. An external note change requires **Reload latest note** before saving the preserved draft. If its original memo cannot be identified, the draft can be saved as a new memo. Drafts are kept in memory, not across application restarts.
+- HTML notes and Kanban notes remain excluded.
 
-Display modes:
+## Markdown and preservation
 
-- Compact mode is used when every memo has only a title. It shows the memo grid only.
-- Full mode is used when at least one memo has body content. It shows the memo grid and a detail pane. On mobile, the grid and detail pane are stacked.
+The plugin recognises same-level ATX headings, top-level bullet/numbered lists, reverse slash-number lists (`3/`, `2/`, `1/`), horizontal-rule sections, prose abstracts before headings, and paragraph blocks. Fenced code and nested structures do not become accidental boundaries. Structures that cannot be split safely stay as one memo with a raw Markdown body editor.
 
-## Build
+The parser retains original source slices, delimiters and line endings. Reading and serializing without changes preserves the original text exactly; an edit or colour change patches only the affected memo. No IDs or additional storage format are inserted into notes. Adding blank-line blocks or structural markers while editing can create new memo boundaries on the next parse.
+
+Use a known colour name or six-digit hex marker at the end of a title, for example `[[yellow]]` or `[[#facc15]]`. Unknown values such as `[[project]]` remain ordinary text. Unchanged markers retain their original spelling. Whole-note fallbacks expose the raw Markdown body instead of inventing a title or colour marker.
+
+Numbered lists keep their written numbers when reading, editing content or changing colour. Adding or moving an item renumbers the list consecutively from its original starting number, retaining its `.` or `)` style. Reverse slash-number lists are renumbered from the item count down to one.
+
+## Image memo boards
+
+Image-only notes show **one memo per image**, without filename/alt-text titles, including adjacent images on the same line, reference images and HTML image tags. Trailing blank lines, empty paragraphs and `<br>` do not create empty cards. Reading, editing and reordering retain the original source whitespace and reference definitions.
+
+Click an image to open the image viewer; click the image or its surrounding stage again to return. Dragging, swiping and pinching do not close it. It supports fit-to-screen, original size (bounded by the zoom limit), zoom buttons, wheel zoom, dragging and Android pinch zoom. Zoom ranges from the fitted image to eight times that size. Failed or unavailable images have a retry action.
+
+## Build and checks
+
+Use Node.js 22.13 or newer (Node 22 LTS is used in CI).
 
 ```sh
-npm install
+npm ci
 npm test
 npm run typecheck
 npm run dist
+npm run verify:package
 ```
 
-The generated `.jpl` plugin archive is written to `publish/`.
+The installable archive is `publish/com.github.txnam.joplinmemo.jpl`. The verification command checks version consistency, icon inclusion and the archive hash. GitHub Actions runs the same checks on Windows and Linux. Packaging failures fail the build.
+
+## Development and validation
+
+- `src/memo/`: source-preserving parser/serializer, model and album detection.
+- `src/editor/`: Joplin bridge, revision-checked save queue and host Markdown rendering/cache.
+- `src/webview/`: HTML filtering, memo forms, reader, image gestures and slideshow state.
+- `tests/`: parser, save race, renderer and webview tests with a simulated Joplin API.
+
+For manual browser QA after building:
+
+```sh
+node tests/browser-server.js
+```
+
+Open `http://127.0.0.1:4177/?note=full`, `?note=compact`, `?note=album` or `?note=photos`. This development host uses mock notes and a simulated renderer, and never accesses your Joplin notes. It is not a substitute for testing inside Joplin. See [the release validation record](docs/validation-0.4.2.md).
+
+No data migration is required. Existing notes and colour markers remain compatible. Save checks detect stale editor revisions and changed stored bodies, but the public Joplin API does not provide an atomic compare-and-swap write; a change between the final read and host save cannot be made transactional by the plugin.

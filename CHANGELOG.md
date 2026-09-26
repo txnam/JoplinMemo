@@ -1,5 +1,32 @@
 # Changelog
 
+## 0.4.2
+
+- Hide generated titles on image-only memo cards while preserving image alt text and source Markdown.
+- Close image viewing with a single click on the image or stage; keep pan, pinch and slide swipe gestures distinct.
+- Show compact tooltips for selected cards and add Edit beside + Memo and beside Close in the compact reader.
+- Let keyboard focus select the compact memo targeted by toolbar Edit.
+
+## 0.4.1
+
+- Remove per-card Edit/Read/up/down toolbars and detail toolbar to give more space to memo content.
+- Edit cards, detail and compact reading panes by double-click; retain drag-and-drop ordering and an F2 edit shortcut.
+- Split image-only notes into one memo per image, including reference and HTML images; ignore visually empty trailing content without deleting source text.
+- Preserve original image markup, whitespace and reference definitions when saving or reordering.
+
+
+## 0.4.0
+
+- Preserve original Markdown source, separators, list markers and line endings; retain unsupported structures intact.
+- Add revision checks, serialized/idempotent saves, retained drafts and explicit conflict recovery.
+- Use Joplin-rendered and sanitized HTML for memo titles, tips, detail, reading panes and slide captions.
+- Correct numbered-list starts and numbering after additions/reorders.
+- Add a complete compact reader and explicit edit/move controls for mobile and keyboard users.
+- Add image thumbnails, fit/original-size viewing, wheel/pinch zoom, panning and retries.
+- Add automatic album detection and opt-in image slideshow with captions, interval selection and looping.
+- Require Joplin 3.5.1, package all icons, fail broken archive builds and add Windows/Linux CI checks.
+- Expand parser, host bridge and webview regression coverage; update build dependencies.
+
 ## 0.3.1
 
 - Fix stale memo content when switching notes on mobile after returning from Markdown view.

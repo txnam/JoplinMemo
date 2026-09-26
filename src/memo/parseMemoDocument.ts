@@ -1,460 +1,139 @@
+import MarkdownIt from 'markdown-it';
+type Token = ReturnType<typeof markdown.parse>[number];
 import { DEFAULT_MEMO_COLOR, Memo, MemoDocument, MemoSplitRule } from './types';
+import { readTitle } from './colors';
+import { imageOnlySpans } from './imageOnly';
 
-type ParsedTitle = {
-	title: string;
-	color: string;
-};
+export const markdown = new MarkdownIt({ html: true, breaks: false });
+let nextId = 0;
+export function newMemoId(): string { return `memo-${++nextId}`; }
 
-type StructuralMarker = {
-	rule: MemoSplitRule;
-	title: string;
-};
+type Boundary = { line: number; source: Memo['source']; level?: number; prefix?: string; number?: number; whole?: boolean };
 
-type FirstMemoSignal = 'structural' | 'reverse-number-slash' | 'separator' | 'prose' | 'empty';
-
-const NAMED_COLORS: Record<string, string> = {
-	amber: '#f59e0b',
-	blue: '#3abef9',
-	charcoal: '#334155',
-	coral: '#ff6b6b',
-	emerald: '#10b981',
-	fuchsia: '#d946ef',
-	gold: '#f9b572',
-	gray: '#64748b',
-	green: '#16a34a',
-	grey: '#64748b',
-	indigo: '#6366f1',
-	lavender: '#a78bfa',
-	leaf: '#16a34a',
-	lemon: '#fde047',
-	lime: '#84cc16',
-	mint: '#95e1d3',
-	navy: '#1e3a8a',
-	ocean: '#00adb5',
-	orange: '#fb923c',
-	pink: '#f875aa',
-	purple: '#8b5cf6',
-	red: '#dc2626',
-	rose: '#ff4d6d',
-	royal: '#2563eb',
-	royalblue: '#2563eb',
-	slate: '#64748b',
-	sky: '#7dd3fc',
-	stone: '#d6d3d1',
-	teal: '#14b8a6',
-	white: '#ffffff',
-	yellow: '#facc15',
-};
-
-function splitLines(markdown: string): string[] {
-	return markdown.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n');
+/** Token maps select boundaries; original byte slices, rather than regenerated tokens, are saved. */
+export function parseMemoDocument(noteId: string, noteTitle: string, source: string): MemoDocument {
+ const env: { references?: Record<string, { href: string; title: string }> } = {};
+ const tokens = markdown.parse(source, env);
+ const lines = source.match(/[^\r\n]*(?:\r\n|\r|\n|$)/g) || [''];
+ if (lines.length > 1 && lines[lines.length - 1] === '') lines.pop();
+ const offsets = [0];
+ for (const line of lines) offsets.push(offsets[offsets.length - 1] + line.length);
+ const lineText = (i: number) => (lines[i] || '').replace(/[\r\n]+$/, '');
+ const top = tokens.filter(t => t.level === 0 && t.map && t.type !== 'inline');
+ const images = imageOnlySpans(source);
+ if (images) {
+  const memos: Memo[] = images.map((image, index) => {
+   const raw = source.slice(image.start, image.end);
+   const gap = source.slice(image.end, images[index + 1]?.start ?? source.length);
+   const title = image.alt;
+   return { id: newMemoId(), title, body: raw, color: DEFAULT_MEMO_COLOR, source: 'image',
+    original: { raw, gap, title, body: raw, color: DEFAULT_MEMO_COLOR, titleStart: 0, titleEnd: 0, bodyStart: 0, prefix: '', bodyIndent: '', whole: true } };
+  });
+  const references = Object.entries(env.references || {}).map(([key, r]) => `[${key}]: <${r.href}>${r.title ? ` "${r.title.replace(/"/g, '&quot;')}"` : ''}`).join('\n');
+  return { noteId, title: noteTitle || 'Untitled note', rule: { type: 'block' }, memos, references,
+   original: { markdown: source, ids: memos.map(m => m.id), prefix: source.slice(0, images[0].start), eol: /\r\n|\r|\n/.exec(source)?.[0] || '\n' } };
+ }
+ const first = top[0];
+ let rule: MemoSplitRule = { type: 'block' };
+ let boundaries: Boundary[] = [];
+ const heading = (t: Token): Boundary => ({ line: t.map![0], source: 'heading', level: Number(t.tag.slice(1)) });
+ const firstText = first ? lineText(first.map![0]) : '';
+ // Slash-number lists are a plugin convention, not a CommonMark list.
+ const slash = /^( *)\d+\/\s+/.exec(firstText);
+ if (slash && first?.type === 'paragraph_open') {
+  const excluded = new Set<number>();
+  for (const token of tokens) if (token.map && ['fence', 'code_block', 'html_block'].includes(token.type)) {
+   for (let i = token.map[0]; i < token.map[1]; i++) excluded.add(i);
+  }
+  lines.forEach((_, line) => {
+   const m = /^( *)(\d+)\/\s+/.exec(lineText(line));
+   if (m && m[1].length === slash[1].length && !excluded.has(line)) boundaries.push({ line, source: 'reverse-number-list', prefix: m[0], number: Number(m[2]) });
+  });
+  rule = { type: 'reverse-number-slash', indent: slash[1].length, bodyIndent: slash[0].length };
+ } else if (first?.type === 'heading_open' && /^#{1,6}\s/.test(firstText)) {
+  boundaries = top.filter(t => t.type === 'heading_open' && t.tag === first.tag).map(heading);
+  rule = { type: 'heading', level: Number(first.tag.slice(1)) };
+ } else if (first && ['bullet_list_open', 'ordered_list_open'].includes(first.type)) {
+  const ordered = first.type === 'ordered_list_open';
+  const prefix = /^( *)(?:[-*+]|\d+[.)])\s+/.exec(firstText);
+  const listTokens = top.filter(t => t.type === first.type);
+  // A trailing top-level paragraph or another structure cannot safely belong to a list item.
+  const coveredEnd = listTokens[listTokens.length - 1]?.map?.[1] || 0;
+  const unrelated = top.some(t => t.type !== first.type);
+  if (prefix && !unrelated) {
+   boundaries = tokens.filter(t => t.type === 'list_item_open' && t.level === 1 && t.map && t.map[0] < coveredEnd).map(t => {
+    const p = /^( *)(?:[-*+]|(\d+)[.)])\s+/.exec(lineText(t.map![0]))!;
+    return { line: t.map![0], source: 'list', prefix: p[0], number: p[2] ? Number(p[2]) : undefined };
+   });
+   rule = ordered
+    ? { type: 'ordered-list', indent: prefix[1].length, bodyIndent: prefix[0].length, start: boundaries[0]?.number || 1, delimiter: /\d+([.)])/.exec(prefix[0])?.[1] || '.' }
+    : { type: 'unordered-list', indent: prefix[1].length, bodyIndent: prefix[0].length };
+  }
+ } else if (first?.type === 'paragraph_open' || first?.type === 'hr') {
+  const rules = top.filter(t => t.type === 'hr' && /^\S/.test(lineText(t.map![0])));
+  if (rules.length && top.some(t => t.type !== 'hr')) {
+   rule = { type: 'separator-section', marker: lineText(rules[0].map![0]) };
+   const starts = [first.map![0], ...rules.map(t => t.map![1])];
+   for (const start of starts) {
+    let line = start;
+    while (line < lines.length && !lineText(line).trim()) line++;
+    if (line >= lines.length || rules.some(t => t.map![0] === line)) continue;
+    const h = /^(#{1,6})\s+/.exec(lineText(line));
+    const token = top.find(t => t.map![0] === line);
+    boundaries.push({ line, source: h ? 'heading' : 'separator-section', level: h?.[1].length, whole: !!token && !['paragraph_open', 'heading_open'].includes(token.type) });
+   }
+  } else {
+   const h = top.find(t => t.type === 'heading_open' && /^#{1,6}\s/.test(lineText(t.map![0])));
+   if (h && h.map![0] > first.map![0]) {
+    rule = { type: 'abstract-heading', level: Number(h.tag.slice(1)) };
+    boundaries = [{ line: first.map![0], source: 'abstract' }, ...top.filter(t => t.type === 'heading_open' && t.tag === h.tag).map(heading)];
+   } else if (top.every(t => t.type === 'paragraph_open')) {
+    boundaries = top.map(t => ({ line: t.map![0], source: 'block' }));
+   }
+  }
+ }
+ // Unsupported structures stay intact, including fenced code before a heading.
+ if (!boundaries.length && source.trim()) boundaries = [{ line: first?.map?.[0] || 0, source: 'whole-note', whole: true }];
+ const eol = /\r\n|\r|\n/.exec(source)?.[0] || '\n';
+ const memos: Memo[] = boundaries.map((b, index) => {
+  const start = offsets[b.line];
+  const end = index + 1 < boundaries.length ? offsets[boundaries[index + 1].line] : source.length;
+  const chunk = source.slice(start, end);
+  let raw = chunk.replace(/(?:\r\n|\r|\n|[ \t])+$/, '');
+  // Separators belong to the boundary, not to the preceding memo body.
+  if (rule.type === 'separator-section') {
+   const hr = top.find(t => t.type === 'hr' && offsets[t.map![0]] >= start && offsets[t.map![0]] < end);
+   if (hr) raw = source.slice(start, offsets[hr.map![0]]).replace(/\s+$/, '');
+  }
+  const gap = chunk.slice(raw.length);
+  const firstLine = raw.split(/\r\n|\r|\n/)[0];
+  const prefix = b.prefix || (b.level ? /^(#{1,6})\s+/.exec(firstLine)?.[0] || '' : '');
+  const headingSuffix = b.level ? /\s+#+\s*$/.exec(firstLine)?.[0] || '' : '';
+  const titleEnd = firstLine.length - headingSuffix.length;
+  const parsed = readTitle(firstLine.slice(prefix.length, titleEnd));
+  const bodyStart = firstLine.length + (/\r\n|\r|\n/.exec(raw.slice(firstLine.length))?.[0].length || 0);
+  const bodyIndent = b.prefix ? ' '.repeat(b.prefix.length) : '';
+  const body = b.whole ? raw : raw.slice(bodyStart).split(/\r\n|\r|\n/).map(l => bodyIndent && l.startsWith(bodyIndent) ? l.slice(bodyIndent.length) : l).join('\n');
+  const title = b.whole ? noteTitle || 'Note content' : parsed.title;
+  const color = b.whole ? DEFAULT_MEMO_COLOR : parsed.color;
+  return {
+   id: newMemoId(), title, body, color, source: b.source, headingLevel: b.level, number: b.number,
+   original: { raw, gap, title, body, color, titleStart: prefix.length, titleEnd, bodyStart, prefix, bodyIndent, whole: !!b.whole },
+  };
+ });
+ const references = Object.entries(env.references || {}).map(([key, r]) => `[${key}]: <${r.href}>${r.title ? ` "${r.title.replace(/"/g, '&quot;')}"` : ''}`).join('\n');
+ return { noteId, title: noteTitle || 'Untitled note', rule, memos, references,
+  original: { markdown: source, ids: memos.map(m => m.id), prefix: boundaries.length ? source.slice(0, offsets[boundaries[0].line]) : source, eol },
+ };
 }
 
-function trimBlankLines(lines: string[]): string {
-	let start = 0;
-	let end = lines.length;
-
-	while (start < end && lines[start].trim() === '') start += 1;
-	while (end > start && lines[end - 1].trim() === '') end -= 1;
-
-	return lines.slice(start, end).join('\n');
-}
-
-function isFenceLine(line: string): boolean {
-	return /^(```|~~~)/.test(line.trim());
-}
-
-function horizontalRuleMarker(line: string): string | null {
-	if (line !== line.trim()) return null;
-	const trimmed = line.trim();
-	if (/^(?:\*\s*){3,}$/.test(trimmed)) return trimmed;
-	if (/^(?:-\s*){3,}$/.test(trimmed)) return trimmed;
-	if (/^(?:_\s*){3,}$/.test(trimmed)) return trimmed;
-	return null;
-}
-
-function normalizeColor(value: string | undefined): string {
-	if (!value) return DEFAULT_MEMO_COLOR;
-	const normalized = value.trim().toLowerCase();
-	if (/^#[0-9a-f]{6}$/.test(normalized)) return normalized;
-	return NAMED_COLORS[normalized] || DEFAULT_MEMO_COLOR;
-}
-
-function parseTitle(rawTitle: string): ParsedTitle {
-	const markerMatch = /\s*\\?\[\\?\[\s*(#[0-9a-fA-F]{6}|[A-Za-z]+)\s*\\?\]\\?\]\s*$/.exec(rawTitle);
-	if (!markerMatch) {
-		return {
-			title: rawTitle.replace(/\s+/g, ' ').trim() || 'Untitled memo',
-			color: DEFAULT_MEMO_COLOR,
-		};
-	}
-
-	return {
-		title: rawTitle.slice(0, markerMatch.index).replace(/\s+/g, ' ').trim() || 'Untitled memo',
-		color: normalizeColor(markerMatch[1]),
-	};
-}
-
-function stripMarkdownLead(line: string): string {
-	return line
-		.replace(/^#{1,6}\s+/, '')
-		.replace(/^[-*+]\s+/, '')
-		.replace(/^\d+[.)]\s+/, '')
-		.replace(/^\d+\/\s*/, '')
-		.replace(/^>\s?/, '')
-		.trim();
-}
-
-function memoId(prefix: string, index: number): string {
-	return `${prefix}-${index + 1}`;
-}
-
-function createMemo(rawTitle: string, bodyLines: string[], source: Memo['source'], index: number): Memo {
-	const parsedTitle = parseTitle(stripMarkdownLead(rawTitle));
-	return {
-		id: memoId(source, index),
-		title: parsedTitle.title,
-		body: trimBlankLines(bodyLines),
-		color: parsedTitle.color,
-		source,
-	};
-}
-
-function createMemoFromBlock(blockLines: string[], source: Memo['source'], index: number): Memo | null {
-	const trimmedBlock = trimBlankLines(blockLines);
-	if (!trimmedBlock) return null;
-
-	const [firstLine, ...bodyLines] = trimmedBlock.split('\n');
-	return createMemo(firstLine, bodyLines, source, index);
-}
-
-function structuralMarker(line: string): StructuralMarker | null {
-	const headingMatch = /^(#{1,6})\s+(.+?)\s*$/.exec(line);
-	if (headingMatch) {
-		return {
-			rule: { type: 'heading', level: headingMatch[1].length },
-			title: headingMatch[2],
-		};
-	}
-
-	const unorderedMatch = /^(\s*)[-*+]\s+(.+?)\s*$/.exec(line);
-	if (unorderedMatch) {
-		const prefixMatch = /^(\s*)[-*+]\s+/.exec(line);
-		return {
-			rule: {
-				type: 'unordered-list',
-				indent: unorderedMatch[1].length,
-				bodyIndent: prefixMatch ? prefixMatch[0].length : unorderedMatch[1].length + 2,
-			},
-			title: unorderedMatch[2],
-		};
-	}
-
-	const orderedMatch = /^(\s*)\d+[.)]\s+(.+?)\s*$/.exec(line);
-	if (orderedMatch) {
-		const prefixMatch = /^(\s*)\d+[.)]\s+/.exec(line);
-		return {
-			rule: {
-				type: 'ordered-list',
-				indent: orderedMatch[1].length,
-				bodyIndent: prefixMatch ? prefixMatch[0].length : orderedMatch[1].length + 3,
-			},
-			title: orderedMatch[2],
-		};
-	}
-
-	return null;
-}
-
-function sameRule(left: MemoSplitRule, right: MemoSplitRule): boolean {
-	if (left.type !== right.type) return false;
-	if (left.type === 'heading' && right.type === 'heading') return left.level === right.level;
-	if (
-		left.type !== 'heading' &&
-		left.type !== 'abstract-heading' &&
-		left.type !== 'separator-section' &&
-		left.type !== 'block' &&
-		right.type !== 'heading' &&
-		right.type !== 'abstract-heading' &&
-		right.type !== 'separator-section' &&
-		right.type !== 'block'
-	) {
-		return left.indent === right.indent;
-	}
-	return false;
-}
-
-function findFirstSplitRule(lines: string[]): MemoSplitRule | null {
-	let inFence = false;
-
-	for (const line of lines) {
-		if (isFenceLine(line)) {
-			inFence = !inFence;
-			continue;
-		}
-
-		if (inFence || line.trim() === '') continue;
-		return structuralMarker(line)?.rule || null;
-	}
-
-	return null;
-}
-
-function unindentListBody(line: string, rule: MemoSplitRule): string {
-	if (rule.type === 'heading' || rule.type === 'abstract-heading' || rule.type === 'separator-section' || rule.type === 'block') return line;
-	const pattern = new RegExp(`^ {0,${rule.bodyIndent}}`);
-	return line.replace(pattern, '');
-}
-
-function firstMemoSignal(lines: string[]): FirstMemoSignal {
-	let inFence = false;
-
-	for (const line of lines) {
-		if (isFenceLine(line)) {
-			inFence = !inFence;
-			continue;
-		}
-
-		if (inFence || line.trim() === '') continue;
-		if (structuralMarker(line)) return 'structural';
-		if (reverseNumberSlashMarker(line)) return 'reverse-number-slash';
-		if (horizontalRuleMarker(line)) return 'separator';
-		return 'prose';
-	}
-
-	return 'empty';
-}
-
-function parseSeparatorSections(lines: string[]): { rule: MemoSplitRule; memos: Memo[] } | null {
-	let inFence = false;
-	let marker = '';
-	let headingLevel = 0;
-	const sections: string[][] = [];
-	let current: string[] = [];
-
-	const finish = () => {
-		if (trimBlankLines(current)) sections.push(current);
-		current = [];
-	};
-
-	for (const line of lines) {
-		if (isFenceLine(line)) {
-			current.push(line);
-			inFence = !inFence;
-			continue;
-		}
-
-		const horizontalRule = !inFence ? horizontalRuleMarker(line) : null;
-		if (horizontalRule) {
-			marker = marker || horizontalRule;
-			finish();
-			continue;
-		}
-
-		current.push(line);
-	}
-
-	finish();
-	if (!marker || sections.length < 2) return null;
-
-	const memos = sections
-		.map((section, index) => {
-			const firstLine = trimBlankLines(section).split('\n')[0] || '';
-			const structural = structuralMarker(firstLine);
-			if (structural?.rule.type === 'heading') {
-				headingLevel = headingLevel || structural.rule.level;
-				const memo = createMemoFromBlock(section, 'heading', index);
-				return memo ? { ...memo, headingLevel: structural.rule.level } : null;
-			}
-
-			return createMemoFromBlock(section, 'separator-section', index);
-		})
-		.filter((memo): memo is Memo => !!memo);
-	return memos.length >= 2 ? { rule: { type: 'separator-section', marker, ...(headingLevel ? { headingLevel } : {}) }, memos } : null;
-}
-
-function parseAbstractHeadingMemos(lines: string[]): { rule: MemoSplitRule; memos: Memo[] } | null {
-	let inFence = false;
-	let firstHeadingIndex = -1;
-	let firstHeadingRule: MemoSplitRule | null = null;
-
-	for (let index = 0; index < lines.length; index += 1) {
-		const line = lines[index];
-		if (isFenceLine(line)) {
-			inFence = !inFence;
-			continue;
-		}
-
-		const marker = !inFence ? structuralMarker(line) : null;
-		if (marker?.rule.type === 'heading') {
-			firstHeadingIndex = index;
-			firstHeadingRule = marker.rule;
-			break;
-		}
-	}
-
-	if (firstHeadingIndex <= 0 || !firstHeadingRule || firstHeadingRule.type !== 'heading') return null;
-
-	const abstractMemo = createMemoFromBlock(lines.slice(0, firstHeadingIndex), 'abstract', 0);
-	if (!abstractMemo) return null;
-
-	const headingMemos = parseStructuralMemos(lines.slice(firstHeadingIndex));
-	if (!headingMemos || headingMemos.rule.type !== 'heading' || headingMemos.rule.level !== firstHeadingRule.level) return null;
-
-	return {
-		rule: { type: 'abstract-heading', level: firstHeadingRule.level },
-		memos: [abstractMemo, ...headingMemos.memos.map((memo, index) => ({
-			...memo,
-			id: memoId('heading', index),
-		}))],
-	};
-}
-
-function reverseNumberSlashMarker(line: string): { title: string; indent: number; bodyIndent: number } | null {
-	const markerMatch = /^(\s*)\d+\/\s*(.+?)\s*$/.exec(line);
-	if (!markerMatch) return null;
-	const prefixMatch = /^(\s*)\d+\/\s*/.exec(line);
-	return {
-		title: markerMatch[2],
-		indent: markerMatch[1].length,
-		bodyIndent: prefixMatch ? prefixMatch[0].length : markerMatch[1].length + 2,
-	};
-}
-
-function parseReverseNumberSlashMemos(lines: string[]): { rule: MemoSplitRule; memos: Memo[] } | null {
-	let inFence = false;
-	let rule: MemoSplitRule | null = null;
-	const memos: Memo[] = [];
-	let currentTitle = '';
-	let currentBody: string[] = [];
-
-	const finish = () => {
-		if (!currentTitle || !rule) return;
-		memos.push(createMemo(currentTitle, currentBody.map(line => unindentListBody(line, rule as MemoSplitRule)), 'reverse-number-list', memos.length));
-		currentTitle = '';
-		currentBody = [];
-	};
-
-	for (const line of lines) {
-		if (isFenceLine(line)) {
-			if (currentTitle) currentBody.push(line);
-			inFence = !inFence;
-			continue;
-		}
-
-		const marker = !inFence ? reverseNumberSlashMarker(line) : null;
-		if (marker && (!rule || (rule.type === 'reverse-number-slash' && marker.indent === rule.indent))) {
-			finish();
-			rule = {
-				type: 'reverse-number-slash',
-				indent: marker.indent,
-				bodyIndent: marker.bodyIndent,
-			};
-			currentTitle = marker.title;
-			continue;
-		}
-
-		if (currentTitle) currentBody.push(line);
-	}
-
-	finish();
-	return rule && memos.length >= 2 ? { rule, memos } : null;
-}
-
-function parseStructuralMemos(lines: string[]): { rule: MemoSplitRule; memos: Memo[] } | null {
-	const rule = findFirstSplitRule(lines);
-	if (!rule) return null;
-
-	const memos: Memo[] = [];
-	let inFence = false;
-	let currentTitle = '';
-	let currentBody: string[] = [];
-
-	const finish = () => {
-		if (!currentTitle) return;
-		memos.push(createMemo(currentTitle, currentBody, rule.type === 'heading' ? 'heading' : 'list', memos.length));
-		currentTitle = '';
-		currentBody = [];
-	};
-
-	for (const line of lines) {
-		if (isFenceLine(line)) {
-			if (currentTitle) currentBody.push(unindentListBody(line, rule));
-			inFence = !inFence;
-			continue;
-		}
-
-		const marker = !inFence ? structuralMarker(line) : null;
-		if (marker && sameRule(rule, marker.rule)) {
-			finish();
-			currentTitle = marker.title;
-			continue;
-		}
-
-		if (currentTitle) currentBody.push(unindentListBody(line, rule));
-	}
-
-	finish();
-	return memos.length >= 2 ? { rule, memos } : null;
-}
-
-function parseBlockMemos(lines: string[]): Memo[] {
-	const blocks: string[][] = [];
-	let current: string[] = [];
-	let inFence = false;
-
-	const finish = () => {
-		const body = trimBlankLines(current);
-		if (body) blocks.push(body.split('\n'));
-		current = [];
-	};
-
-	for (const line of lines) {
-		if (!inFence && line.trim() === '') {
-			finish();
-		} else {
-			current.push(line);
-		}
-
-		if (isFenceLine(line)) inFence = !inFence;
-	}
-
-	finish();
-
-	return blocks.map((block, index) => {
-		const [firstLine, ...bodyLines] = block;
-		return createMemo(firstLine, bodyLines, 'block', index);
-	});
-}
-
-function fallbackMemo(markdown: string): Memo {
-	const lines = splitLines(markdown);
-	const firstContentLine = lines.find(line => line.trim()) || 'Untitled memo';
-	const body = trimBlankLines(lines);
-	const parsedTitle = parseTitle(stripMarkdownLead(firstContentLine));
-
-	return {
-		id: 'whole-note-1',
-		title: parsedTitle.title,
-		body,
-		color: parsedTitle.color,
-		source: 'whole-note',
-	};
-}
-
-export function parseMemoDocument(noteId: string, noteTitle: string, markdown: string): MemoDocument {
-	const lines = splitLines(markdown);
-	const signal = firstMemoSignal(lines);
-	const structuralMemos = signal === 'structural' ? parseStructuralMemos(lines) : null;
-	const reverseNumberMemos = signal === 'reverse-number-slash' ? parseReverseNumberSlashMemos(lines) : null;
-	const separatorMemos = !structuralMemos && !reverseNumberMemos && (signal === 'separator' || signal === 'prose') ? parseSeparatorSections(lines) : null;
-	const abstractHeadingMemos = !separatorMemos && signal === 'prose' ? parseAbstractHeadingMemos(lines) : null;
-	const memos = separatorMemos?.memos || abstractHeadingMemos?.memos || structuralMemos?.memos || reverseNumberMemos?.memos || parseBlockMemos(lines);
-
-	return {
-		noteId,
-		title: noteTitle || 'Untitled note',
-		rule: separatorMemos?.rule || abstractHeadingMemos?.rule || structuralMemos?.rule || reverseNumberMemos?.rule || { type: 'block' },
-		memos: memos.length ? memos : [fallbackMemo(markdown)],
-	};
+/** Keep selection identity across external updates when an unchanged memo can be identified. */
+export function reconcileMemoIds(document: MemoDocument, previous: MemoDocument): void {
+ if (document.noteId !== previous.noteId) return;
+ const unused = [...previous.memos];
+ for (const memo of document.memos) {
+  const index = unused.findIndex(old => old.original?.raw === memo.original?.raw);
+  if (index >= 0) memo.id = unused.splice(index, 1)[0].id;
+ }
+ if (document.original) document.original.ids = document.memos.map(m => m.id);
 }

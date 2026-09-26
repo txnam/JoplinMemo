@@ -1,0 +1,17 @@
+const assert=require('node:assert/strict');
+const fs=require('node:fs');
+const crypto=require('node:crypto');
+const tar=require('tar');
+const manifest=require('../src/manifest.json');
+const pkg=require('../package.json');
+assert.equal(manifest.version,pkg.version);
+assert.equal(manifest.app_min_version,'3.5.1');
+assert.equal(manifest.app_min_version_mobile,'3.5.1');
+const archive=`publish/${manifest.id}.jpl`;
+const entries=[];
+tar.t({file:archive,sync:true,onReadEntry:entry=>entries.push(entry.path.replace(/\\/g,'/'))});
+for(const expected of ['index.js','manifest.json','webview/app.js','webview/styles.css',...Object.values(manifest.icons)])assert.ok(entries.includes(expected),`Missing archive entry: ${expected}`);
+assert.ok(!entries.some(e=>e.startsWith('tests/')||e.endsWith('.ts')));
+const info=JSON.parse(fs.readFileSync(`publish/${manifest.id}.json`,'utf8'));
+assert.equal(info._publish_hash,`sha256:${crypto.createHash('sha256').update(fs.readFileSync(archive)).digest('hex')}`);
+console.log(`Verified ${archive}: ${entries.length} files, version ${manifest.version}, all icons and matching SHA-256.`);

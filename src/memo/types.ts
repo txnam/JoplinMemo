@@ -5,8 +5,25 @@ export type Memo = {
 	title: string;
 	body: string;
 	color: string;
-	source: 'abstract' | 'heading' | 'separator-section' | 'list' | 'reverse-number-list' | 'block' | 'whole-note';
+	source: 'abstract' | 'heading' | 'separator-section' | 'list' | 'reverse-number-list' | 'block' | 'whole-note' | 'image';
 	headingLevel?: number;
+	number?: number;
+	/** Internal source information; never embedded in a note. */
+	original?: MemoSource;
+};
+
+export type MemoSource = {
+	raw: string;
+	gap: string;
+	title: string;
+	body: string;
+	color: string;
+	titleStart: number;
+	titleEnd: number;
+	bodyStart: number;
+	prefix: string;
+	bodyIndent: string;
+	whole: boolean;
 };
 
 export type MemoSplitRule =
@@ -14,7 +31,7 @@ export type MemoSplitRule =
 	| { type: 'separator-section'; marker: string; headingLevel?: number }
 	| { type: 'heading'; level: number }
 	| { type: 'unordered-list'; indent: number; bodyIndent: number }
-	| { type: 'ordered-list'; indent: number; bodyIndent: number }
+	| { type: 'ordered-list'; indent: number; bodyIndent: number; start?: number; delimiter?: string }
 	| { type: 'reverse-number-slash'; indent: number; bodyIndent: number }
 	| { type: 'block' };
 
@@ -23,7 +40,26 @@ export type MemoDocument = {
 	title: string;
 	rule: MemoSplitRule;
 	memos: Memo[];
+	original?: { markdown: string; ids: string[]; prefix: string; eol: string };
+	references?: string;
 };
+
+export type Slide = { id: string; imageMarkdown: string; caption: string; alt: string };
+export type RenderedMemo = { title: string; body: string; full: string; error?: string };
+export type RenderedSlide = Slide & { imageHtml: string; captionHtml: string; error?: string };
+export type DocumentMessage = {
+	type: 'document'; document: MemoDocument; revision: number;
+	rendered: Record<string, RenderedMemo>; slides: RenderedSlide[];
+	resourcePaths: Record<string, string>; operationId?: string; selectedMemoId?: string;
+};
+export type PluginMessage = DocumentMessage | { type: 'empty' | 'error'; message: string };
+export type Mutation = {
+	type: 'addMemo' | 'editMemo' | 'reorderMemos'; noteId: string;
+	revision: number; operationId: string; memoId?: string; memoIds?: string[];
+	title?: string; body?: string; color?: string;
+};
+export type WebviewMessage = Mutation | { type: 'ready' | 'reload' | 'retryRender' } | { type: 'openLink'; href: string };
+export type MutationResult = DocumentMessage | { type: 'mutationError'; operationId: string; code: 'conflict' | 'invalid' | 'save'; message: string };
 
 export const COLOR_PALETTE = [
 	{ label: 'White', value: '#ffffff' },
