@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.4.3
+
+- Add a Vietnamese introduction and slideshow guide to the README.
+- Highlight full-screen slideshow presentations, including photo albums, visual guides and slides exported as images.
+- Repackage as 0.4.3; plugin behavior is unchanged from 0.4.2.
+
 ## 0.4.2
 
 - Hide generated titles on image-only memo cards while preserving image alt text and source Markdown.

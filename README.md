@@ -1,26 +1,41 @@
 # JoplinMemo
 
-JoplinMemo 0.4.2 turns ordinary Markdown notes into colourful memo boards, readable cards and image slideshows. It requires **Joplin 3.5.1 or later** on desktop and mobile. Android is the mobile acceptance target; iOS has not been verified for this release.
+JoplinMemo 0.4.3 turns ordinary Markdown notes into colourful memo boards, readable cards and image slideshows. It requires **Joplin 3.5.1 or later** on desktop and mobile. Android is the mobile acceptance target; iOS has not been verified for this release.
 
-**Turn an image note into a slideshow:** paste your images into a note, open **Slide**, then press **Play**. Each image becomes a slide, with optional formatted captions, adjustable timing and zoom. Your note stays ordinary Markdown.
+**Present your image notes in full screen:** paste your images into a note, open **Slide**, select **Fullscreen** when available, then press **Play**. Each image becomes a slide, with optional formatted captions, adjustable timing and zoom. Use it to present photo albums, visual guides or image-based talks directly from your Joplin notes. Your note stays ordinary Markdown.
+
+## Giới thiệu bằng tiếng Việt
+
+**JoplinMemo** biến ghi chú Markdown trong Joplin thành bảng memo gọn, dễ đọc và có màu sắc. Bạn có thể xem nhanh nhiều mục cùng lúc, mở nội dung đầy đủ, chỉnh sửa từng memo và kéo thả để sắp xếp. Ghi chú chỉ chứa ảnh sẽ hiển thị mỗi ảnh thành một memo riêng.
+
+**Slideshow toàn màn hình là một cách tiện lợi để trình chiếu ngay từ ghi chú.** Chỉ cần dán các ảnh vào note, thêm chú thích nếu muốn, rồi mở **Slide → Fullscreen → Play**. Tính năng này phù hợp để giới thiệu album ảnh, trình bày tài liệu minh họa hoặc thuyết trình bằng các trang slide đã xuất thành ảnh.
+
+- Mỗi ảnh là một slide; phần chữ phía sau ảnh trở thành chú thích và giữ định dạng Markdown.
+- Tự động chuyển ảnh sau **3, 5 hoặc 10 giây**, có **Play/Pause**, bật lặp và bật/tắt chú thích.
+- Khi trình bày thủ công, dùng nút Trước/Sau, phím mũi tên hoặc vuốt ngang lúc ảnh đang vừa khung. Có thể thu phóng để xem chi tiết.
+- Nút **Fullscreen** xuất hiện khi môi trường Joplin hỗ trợ chế độ toàn màn hình; nếu không, slideshow vẫn phủ toàn bộ vùng plugin.
+- Bấm lại vào ảnh hoặc vùng trống xung quanh để quay về bảng memo; cũng có thể dùng **Close** hoặc **Esc**. Việc xem và trình chiếu không sửa nội dung note.
+
+Yêu cầu **Joplin 3.5.1 trở lên**. Tải file `.jpl` tại [GitHub Releases](https://github.com/txnam/JoplinMemo/releases) và cài bằng tùy chọn **Install from file** trong phần plugin của Joplin.
 
 ## Image slideshow
 
 1. Create a note with images on their own lines. You may add a heading before the first image and caption text after each image.
 2. Open the note in JoplinMemo and select **Slide**. The first image opens without starting playback.
 3. Press **Play** for an automatic slideshow, or browse with the previous/next buttons, arrow keys, or a horizontal swipe while the image is fitted.
+4. Select **Fullscreen** when available to present the album across the whole screen, making images and captions easier for an audience to see.
 
 - **Playback:** choose 3, 5 or 10 seconds per image; 5 seconds is the default. Use Pause at any time and enable Loop when you want to repeat the album.
 - **Captions:** show or hide formatted text below each image. Text belongs to the preceding image until the next image; alt text is used when no caption is supplied.
 - **Image controls:** fit the image to the viewing area, view original size within the zoom limit, or zoom up to eight times the fitted size. Use the mouse wheel or pinch gesture to zoom and drag to pan.
-- **Viewing area:** slides fill the plugin area; Fullscreen is available when the host supports it. Click the image or the surrounding stage to return to the memo board, or use Close or Escape.
+- **Full-screen presentations:** use Fullscreen for presenting photo albums, illustrated instructions or slides exported as images. The button is available when the host supports full screen; otherwise, slides fill the plugin area. Click the image or the surrounding stage to return to the memo board, or use Close or Escape.
 - **Automatic pause:** zooming, closing the viewer, changing notes, hiding the app or encountering an image error pauses playback. Only the next image is preloaded.
 
 The **Slide** button appears automatically for image albums. Images inside code, inline images mixed into sentences, and notes with prose before the first image do not qualify. A single opening heading is allowed, and Markdown reference images are supported. Viewing slides never changes or saves the note.
 
 ## Install
 
-Download `com.github.txnam.joplinmemo.jpl` from [GitHub Releases](https://github.com/txnam/JoplinMemo/releases) and install it using Joplin's **Install from file** plugin option. Version 0.4.2 requires Joplin 3.5.1 or later.
+Download `com.github.txnam.joplinmemo.jpl` from [GitHub Releases](https://github.com/txnam/JoplinMemo/releases) and install it using Joplin's **Install from file** plugin option. Version 0.4.3 requires Joplin 3.5.1 or later.
 
 ## Reading and editing
 
